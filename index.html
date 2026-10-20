@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flip Countdown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
+<!--
+  Foundations flip countdown — set it with the web address:
+    countdown.html?minutes=5                 5-minute countdown (starts when the page opens)
+    countdown.html?minutes=2.5               2 minutes 30 seconds
+    countdown.html?until=9:30                counts down to 9:30 today (or tomorrow if that's passed)
+    countdown.html?until=2026-11-08T09:00    counts down to a specific date and time
+  Add any of these with &:
+    bg=transparent | cream | green | wall    background (default: transparent)
+    labels=dark | light | none               Days/Hours/Minutes/Seconds labels (default: matches the background)
+    size=1                                   clock size (0.5 = half, 1.5 = bigger)
+    end=Welcome!                             text to show when it reaches zero (optional)
+    anim=off                                 numbers change without the flip (use if a program freezes the animation)
+  Example: countdown.html?minutes=5&bg=wall
+  With no settings, a setup screen appears.
+-->
+<style>
+  :root { --ink: #1d2a27; --cream: #fffcf2; --size: 1; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body.bg-cream { background: var(--cream); }
+  body.bg-green { background: var(--ink); }
+  body.bg-wall  { background: var(--cream) url("background.jpg") center / cover no-repeat; }
+
+  .stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .clock { --card-h: calc(min(37vh, 21vw) * var(--size)); --card-w: calc(var(--card-h) * .86);
+           display: flex; gap: calc(var(--card-h) * .1); position: relative; }
+  body.bg-wall .clock::before {            /* soft cream glow so the clock reads over the photos */
+    content: ""; position: absolute; inset: calc(var(--card-h) * -.18) calc(var(--card-h) * -.22); z-index: -1;
+    border-radius: calc(var(--card-h) * .2); background: rgba(255,252,242,.82); filter: blur(calc(var(--card-h) * .1)); }
+  .unit { text-align: center; }
+  .unit[hidden] { display: none; }
+  .unit small { display: block; margin-top: calc(var(--card-h) * .065); font-size: calc(var(--card-h) * .075); font-weight: 700;
+                letter-spacing: .16em; text-transform: uppercase; color: var(--ink); }
+  body.labels-light .unit small { color: #fff; text-shadow: 0 1px 8px rgba(0,0,0,.6); }
+  body.labels-none .unit small { display: none; }
+
+  .flip { position: relative; width: var(--card-w); height: var(--card-h); perspective: calc(var(--card-h) * 3.2);
+          font-size: calc(var(--card-h) * .53); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+          filter: drop-shadow(0 calc(var(--card-h) * .03) calc(var(--card-h) * .07) rgba(29,42,39,.3)); }
+  .flip > div { position: absolute; left: 0; right: 0; height: 50%; overflow: hidden; background: var(--ink); color: #fff; }
+  .flip .t, .flip .ft { top: 0; border-radius: calc(var(--card-h) * .045) calc(var(--card-h) * .045) 0 0; transform-origin: 50% 100%; }
+  .flip .b, .flip .fb { bottom: 0; border-radius: 0 0 calc(var(--card-h) * .045) calc(var(--card-h) * .045); transform-origin: 50% 0; background: #243430; }
+  .flip span { position: absolute; left: 0; right: 0; height: 200%; display: flex; align-items: center; justify-content: center; line-height: 1; }
+  .flip .t span, .flip .ft span { top: 0; }
+  .flip .b span, .flip .fb span { bottom: 0; }
+  .flip .ft { z-index: 2; backface-visibility: hidden; }
+  .flip .fb { z-index: 2; transform: rotateX(90deg); backface-visibility: hidden; }
+  .flip::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; z-index: 3; background: rgba(0,0,0,.55); }
+  .flip.go .ft { animation: ft .28s ease-in forwards; }
+  .flip.go .fb { animation: fb .28s .28s ease-out forwards; }
+  @keyframes ft { to { transform: rotateX(-90deg); } }
+  @keyframes fb { from { transform: rotateX(90deg); } to { transform: rotateX(0); } }
+
+  .end { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 5vw;
+         font-size: calc(min(12vh, 8vw) * var(--size)); font-weight: 800; color: var(--ink); letter-spacing: -.01em; }
+  body.labels-light .end { color: #fff; text-shadow: 0 2px 16px rgba(0,0,0,.5); }
+  body.ended.has-end .end { display: flex; }
+  body.ended.has-end .stage { display: none; }
+
+  /* ---- setup screen (only when the page is opened without settings) ---- */
+  .setup { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: var(--cream); padding: 16px; }
+  body.setting-up .setup { display: flex; }
+  body.setting-up .stage { display: none; }
+  .panel { width: 100%; max-width: 520px; color: var(--ink); }
+  .panel h1 { margin: 0 0 6px; font-size: 28px; font-weight: 800; }
+  .panel p { margin: 0 0 22px; font-size: 15px; line-height: 1.45; }
+  .row { margin-bottom: 16px; }
+  .row label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; letter-spacing: .02em; }
+  .row input, .row select { width: 100%; font: inherit; font-size: 16px; padding: 11px 12px; border: 2px solid #c9c6b8; border-radius: 10px; background: #fff; color: var(--ink); }
+  .seg { display: flex; gap: 8px; }
+  .seg button { flex: 1; font: inherit; font-weight: 700; padding: 10px; border: 2px solid #c9c6b8; border-radius: 10px; background: #fff; color: var(--ink); cursor: pointer; }
+  .seg button.on { border-color: var(--ink); background: var(--ink); color: #fff; }
+  .start { width: 100%; margin-top: 8px; padding: 15px; border: 0; background: var(--ink); color: #fff; font: inherit; font-size: 17px; font-weight: 800; cursor: pointer; outline: 3px solid #6b6f2c; outline-offset: 3px; }
+  .link { margin-top: 18px; font-size: 13px; word-break: break-all; background: #fff; border: 1px dashed #a9a690; border-radius: 8px; padding: 10px; }
+  .hint { position: fixed; bottom: 12px; left: 0; right: 0; text-align: center; font-size: 12px; color: rgba(29,42,39,.55); opacity: 0; transition: opacity .3s; }
+  body.show-hint .hint { opacity: 1; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="clock" role="timer" aria-live="off">
+      <div class="unit" data-unit="d"><div class="flip"></div><small>Days</small></div>
+      <div class="unit" data-unit="h"><div class="flip"></div><small>Hours</small></div>
+      <div class="unit" data-unit="m"><div class="flip"></div><small>Minutes</small></div>
+      <div class="unit" data-unit="s"><div class="flip"></div><small>Seconds</small></div>
+    </div>
+  </div>
+  <div class="end"></div>
+  <div class="hint">Press R to restart · S for setup</div>
+
+  <div class="setup">
+    <div class="panel">
+      <h1>Flip Countdown</h1>
+      <p>Pick a length or an end time. Press <strong>Start</strong>, or copy the link to use in ProPresenter, OBS or a browser.</p>
+      <div class="row">
+        <label>Count down</label>
+        <div class="seg" id="mode"><button type="button" data-v="minutes" class="on">For a length of time</button><button type="button" data-v="until">Until a time</button></div>
+      </div>
+      <div class="row" id="row-minutes"><label for="minutes">Minutes</label><input id="minutes" type="number" min="0.1" step="0.5" value="5"></div>
+      <div class="row" id="row-until" hidden><label for="until">End time</label><input id="until" type="datetime-local"></div>
+      <div class="row"><label for="bg">Background</label>
+        <select id="bg"><option value="transparent">Transparent</option><option value="wall">Photo wall</option><option value="cream">Cream</option><option value="green">Dark green</option></select></div>
+      <div class="row"><label for="end">Text when it reaches zero (optional)</label><input id="end" type="text" placeholder="e.g. Welcome!"></div>
+      <button class="start" type="button" id="go">Start</button>
+      <div class="link" id="link"></div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var body = document.body;
+
+  // ---------- setup screen ----------
+  var hasSetting = q.has("minutes") || q.has("seconds") || q.has("until");
+  if (!hasSetting) { setupScreen(); return; }
+
+  // ---------- settings ----------
+  var bg = (q.get("bg") || "transparent").toLowerCase();
+  body.classList.add("bg-" + bg);
+  var labels = (q.get("labels") || (bg === "green" ? "light" : "dark")).toLowerCase();
+  body.classList.add("labels-" + labels);
+  var size = parseFloat(q.get("size"));
+  if (size > 0) document.documentElement.style.setProperty("--size", size);
+  var noAnim = /^(off|0|no|false)$/i.test(q.get("anim") || "");
+  var endText = q.get("end");
+  if (endText) { body.classList.add("has-end"); document.querySelector(".end").textContent = endText; }
+
+  function parseUntil(s) {
+    s = s.trim();
+    var m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?$/i);          // just a time: today, or tomorrow if passed
+    if (m) {
+      var h = +m[1], min = +m[2], sec = +(m[3] || 0), ap = (m[4] || "").toLowerCase();
+      if (ap === "pm" && h < 12) h += 12; if (ap === "am" && h === 12) h = 0;
+      var d = new Date(); d.setHours(h, min, sec, 0);
+      if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+      return d.getTime();
+    }
+    var t = new Date(s.replace(" ", "T")).getTime();
+    return isNaN(t) ? null : t;
+  }
+
+  var target;
+  function setTarget() {
+    if (q.has("until")) target = parseUntil(q.get("until"));
+    else target = Date.now() + 1000 * (q.has("seconds") ? parseFloat(q.get("seconds")) : parseFloat(q.get("minutes")) * 60);
+    if (!target) target = Date.now();
+  }
+  setTarget();
+
+  // which units to show: days/hours only when the countdown is that long
+  var startLeft = Math.max(0, target - Date.now());
+  var showD = startLeft >= 864e5, showH = showD || startLeft >= 36e5;
+  document.querySelector('[data-unit="d"]').hidden = !showD;
+  document.querySelector('[data-unit="h"]').hidden = !showH;
+
+  // ---------- flip cards ----------
+  function buildFlip(el) {
+    el.innerHTML = '<div class="t"><span></span></div><div class="b"><span></span></div><div class="ft"><span></span></div><div class="fb"><span></span></div>';
+    var q2 = function (c) { return el.querySelector("." + c + " span"); };
+    var card = { el: el, t: q2("t"), b: q2("b"), ft: q2("ft"), fb: q2("fb"), val: null, timer: null };
+    card.finish = function () { clearTimeout(card.timer); card.b.textContent = card.ft.textContent = card.val; el.classList.remove("go"); };
+    el.querySelector(".fb").addEventListener("animationend", card.finish);
+    return card;
+  }
+  function setFlip(card, v) {
+    if (card.val === v) return;
+    var old = card.val; card.val = v;
+    if (old === null) { card.t.textContent = card.b.textContent = card.ft.textContent = card.fb.textContent = v; return; }
+    if (noAnim) { card.t.textContent = card.b.textContent = card.ft.textContent = card.fb.textContent = v; return; }
+    card.t.textContent = v; card.fb.textContent = v; card.ft.textContent = old; card.b.textContent = old;
+    card.el.classList.remove("go"); void card.el.offsetWidth; card.el.classList.add("go");
+    clearTimeout(card.timer); card.timer = setTimeout(card.finish, 700);   // safety net if the animation is paused
+  }
+  var cards = {};
+  ["d", "h", "m", "s"].forEach(function (u) { cards[u] = buildFlip(document.querySelector('[data-unit="' + u + '"] .flip')); });
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+
+  function tick() {
+    var left = Math.max(0, target - Date.now());
+    var s = Math.ceil(left / 1000);                 // round up so it shows 05:00 at the start and 00:00 only at the end
+    var d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60, sec = s % 60;
+    if (!showH) m = Math.floor(s / 60);             // minutes can go past 59 when hours are hidden
+    else if (!showD) h = Math.floor(s / 3600);
+    setFlip(cards.d, pad(d)); setFlip(cards.h, pad(h)); setFlip(cards.m, pad(m)); setFlip(cards.s, pad(sec));
+    body.classList.toggle("ended", s === 0);
+  }
+  tick();
+  setInterval(tick, 200);
+
+  // keyboard: R restarts, S opens setup (handy in a browser; ignored in ProPresenter)
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "r" || e.key === "R") { setTarget(); tick(); }
+    if (e.key === "s" || e.key === "S") { location.search = ""; }
+  });
+  var hintTimer;
+  document.addEventListener("mousemove", function () { body.classList.add("show-hint"); clearTimeout(hintTimer); hintTimer = setTimeout(function () { body.classList.remove("show-hint"); }, 2000); });
+
+  // ---------- setup screen ----------
+  function setupScreen() {
+    body.classList.add("setting-up");
+    var mode = "minutes";
+    var $ = function (id) { return document.getElementById(id); };
+    var d = new Date(Date.now() + 36e5); d.setMinutes(0, 0, 0);
+    $("until").value = new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+    document.querySelectorAll("#mode button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        mode = b.dataset.v;
+        document.querySelectorAll("#mode button").forEach(function (x) { x.classList.toggle("on", x === b); });
+        $("row-minutes").hidden = mode !== "minutes"; $("row-until").hidden = mode !== "until"; update();
+      });
+    });
+    function params() {
+      var p = new URLSearchParams();
+      if (mode === "minutes") p.set("minutes", $("minutes").value || "5"); else p.set("until", $("until").value);
+      if ($("bg").value !== "transparent") p.set("bg", $("bg").value);
+      if ($("end").value.trim()) p.set("end", $("end").value.trim());
+      return p.toString();
+    }
+    function update() { $("link").textContent = location.href.split("?")[0] + "?" + params(); }
+    ["minutes", "until", "bg", "end"].forEach(function (id) { $(id).addEventListener("input", update); });
+    $("go").addEventListener("click", function () { location.search = params(); });
+    update();
+  }
+})();
+</script>
+</body>
+</html>
